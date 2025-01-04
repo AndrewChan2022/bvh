@@ -20,26 +20,32 @@ using Ray     = bvh::v2::Ray<Scalar, 3>;
 
 using PrecomputedTri = bvh::v2::PrecomputedTri<Scalar>;
 
+namespace TraverseUtils {
+
+static BVH_ALWAYS_INLINE Scalar FastDot(const Vec3& a, const Vec3& b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
 // Utility function to compute the closest point on a triangle
-static Vec3 closest_point_on_triangle(const Vec3& p, const Vec3& a, const Vec3& b, const Vec3& c) {
+static inline Vec3 closest_point_on_triangle(const Vec3& p, const Vec3& a, const Vec3& b, const Vec3& c, Scalar& u, Scalar& v) {
     // Vectors from triangle vertices to the point
     Vec3 ab = b - a;
     Vec3 ac = c - a;
     Vec3 ap = p - a;
 
     // Compute barycentric coordinates for point projection onto triangle plane
-    Scalar d1 = bvh::v2::dot(ab, ap);
-    Scalar d2 = bvh::v2::dot(ac, ap);
+    Scalar d1 = FastDot(ab, ap);
+    Scalar d2 = FastDot(ac, ap);
     if (d1 <= 0.0f && d2 <= 0.0f) return a; // Closest to vertex A
 
     Vec3 bp = p - b;
-    Scalar d3 = bvh::v2::dot(ab, bp);
-    Scalar d4 = bvh::v2::dot(ac, bp);
+    Scalar d3 = FastDot(ab, bp);
+    Scalar d4 = FastDot(ac, bp);
     if (d3 >= 0.0f && d4 <= d3) return b; // Closest to vertex B
 
     Vec3 cp = p - c;
-    Scalar d5 = bvh::v2::dot(ab, cp);
-    Scalar d6 = bvh::v2::dot(ac, cp);
+    Scalar d5 = FastDot(ab, cp);
+    Scalar d6 = FastDot(ac, cp);
     if (d6 >= 0.0f && d5 <= d6) return c; // Closest to vertex C
 
     // Check if point is on edge AB
@@ -65,29 +71,71 @@ static Vec3 closest_point_on_triangle(const Vec3& p, const Vec3& a, const Vec3& 
 
     // Point is inside the triangle
     Scalar denom = 1.0f / (va + vb + vc);
-    Scalar v = vb * denom;
+    v = vb * denom;
     Scalar w = vc * denom;
+    u = 1.0f - v - w;
     return a + ab * v + ac * w;
 }
 
-static inline bool sphere_triangle_intersect(Vec3& center, float radius, Tri& triangle) {
-    // Extract triangle vertices
-    const Vec3& v0 = triangle.p0;
-    const Vec3& v1 = triangle.p1;
-    const Vec3& v2 = triangle.p2;
+// return optional uv
+static inline std::optional<std::pair<Scalar, Scalar>> sphere_triangle_intersect(const Ray& ray, const bvh::v2::PrecomputedTri<float>& precomputed_tri) {
+    const Vec3& center = ray.org;
+    float radius = ray.tmax;
+
+    // Extract triangle vertices from PrecomputedTri
+    const Vec3& p0 = precomputed_tri.p0;
+    const Vec3& p1 = precomputed_tri.p0 - precomputed_tri.e1;
+    const Vec3& p2 = precomputed_tri.e2 + precomputed_tri.p0;
 
     // Find the closest point on the triangle to the sphere center
-    Vec3 closest_point; // = bvh::v2::closest_point_on_triangle(center, v0, v1, v2);
+    Scalar u, v;
+    Vec3 closest_point = closest_point_on_triangle(center, p0, p1, p2, u, v);
 
     // Compute the distance between the sphere center and the closest point
     Vec3 diff = closest_point - center;
-    float dist_squared = bvh::v2::dot(diff, diff);
+    float dist_squared = FastDot(diff, diff);
 
     // Check if the distance is less than or equal to the sphere radius squared
-    return dist_squared <= radius * radius;
+    if( dist_squared <= radius * radius) {
+        return std::make_optional(std::pair<Scalar, Scalar> { u, v });
+    }
+
+    return std::nullopt;
 }
 
-static inline bool sphere_node_intersect(Vec3& center, float radius, Node& triangle) {
+static inline Scalar squared_distance_point_to_bbox(const Vec3& point, const std::array<Scalar, 6>& bounds) {
+    Scalar dist_squared = 0;
+
+    // For each dimension (x, y, z)
+    for (size_t i = 0; i < 3; ++i) {
+        Scalar min_bound = bounds[i * 2];
+        Scalar max_bound = bounds[i * 2 + 1];
+
+        // If the point is outside the bounds, add squared distance
+        if (point[i] < min_bound) {
+            Scalar diff = min_bound - point[i];
+            dist_squared += diff * diff;
+        } else if (point[i] > max_bound) {
+            Scalar diff = point[i] - max_bound;
+            dist_squared += diff * diff;
+        }
+    }
+
+    return dist_squared;    
+}
+
+// return t0, t1
+static inline std::pair<float, float> sphere_node_intersect(const Ray& ray, const Node& node) {
+    const Vec3& center = ray.org;
+    float radius = ray.tmax;
+
+    Scalar dist_squared = squared_distance_point_to_bbox(center, node.bounds);
+
+    // Check if the distance is less than or equal to the sphere radius squared
+    // return dist_squared <= radius * radius;
+    Scalar t0 = dist_squared, t1 = dist_squared;
+    return std::pair<float, float> { t0, t1 };
+}
 
 }
 
@@ -138,7 +186,7 @@ int main() {
         Vec3(0., 0., 0.), // Ray origin
         Vec3(0., 0., 1.), // Ray direction
         0.,               // Minimum intersection distance
-        100.              // Maximum intersection distance
+        1.1               // Maximum intersection distance
     };
 
     static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
@@ -147,17 +195,19 @@ int main() {
 
     auto prim_id = invalid_id;
     Scalar u, v;
+    constexpr bool IsAnyHit = true;
 
     // Traverse the BVH and get the u, v coordinates of the closest intersection.
     bvh::v2::SmallStack<Bvh::Index, stack_size> stack;
-    bvh.traverse_top_down<true>(bvh.get_root().index, stack, 
+    bvh.traverse_top_down<IsAnyHit>(bvh.get_root().index, stack, 
         // leaf
         [&] (size_t begin, size_t end) {
             for (size_t i = begin; i < end; ++i) {
                 size_t j = should_permute ? i : bvh.prim_ids[i];
-                if (auto hit = precomputed_tris[j].intersect(ray)) {
+                if(auto hit = TraverseUtils::sphere_triangle_intersect(ray, precomputed_tris[j])) {
                     prim_id = i;
                     std::tie(u, v) = *hit;
+                    return true;
                 }
             }
             return prim_id != invalid_id;
@@ -166,18 +216,14 @@ int main() {
         [&] (const Node& left, const Node& right) {
             
             std::pair<Scalar, Scalar> intr_left, intr_right;
-            if constexpr (IsRobust) {
-                intr_left  = left .intersect_robust(ray, inv_dir, inv_dir_pad, octant);
-                intr_right = right.intersect_robust(ray, inv_dir, inv_dir_pad, octant);
-            } else {
-                intr_left  = left .intersect_fast(ray, inv_dir, inv_org, octant);
-                intr_right = right.intersect_fast(ray, inv_dir, inv_org, octant);
-            }
-            bool leftHit = true;
-            bool rightHit = false;
-            bool swapLeftRight = !IsAnyHit && intr_left.first > intr_right.first;
+            intr_left = TraverseUtils::sphere_node_intersect(ray, left);
+            intr_right = TraverseUtils::sphere_node_intersect(ray, right);
 
-            return std::make_tuple(leftHit, rightHit, swapLeftRight);
+            // left hit, right hit, swap left right
+            return std::make_tuple(
+                intr_left.first <= intr_left.second,
+                intr_right.first <= intr_right.second,
+                !IsAnyHit && intr_left.first > intr_right.first);
         });
 
     if (prim_id != invalid_id) {
@@ -186,9 +232,31 @@ int main() {
             << "  primitive: " << prim_id << "\n"
             << "  distance: " << ray.tmax << "\n"
             << "  barycentric coords.: " << u << ", " << v << std::endl;
-        return 0;
+        // return 0;
     } else {
         std::cout << "No intersection found" << std::endl;
-        return 1;
+        // return 1;
     }
+
+
+    size_t nnode = 1024 * 1024 * 1024;
+    std::vector<Vec3> nodes(nnode);
+    std::vector<Scalar> nodesdot(nnode);
+
+    auto start = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < nnode; i++) {
+        auto& node = nodes[i];
+        nodesdot[i] = TraverseUtils::FastDot(node, node);
+    }
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
+    std::cout << "\n\ndot time:  " << duration / 1000.0 << " ms\n";
+
+    start = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < nnode; i++) {
+        auto& node = nodes[i];
+        nodesdot[i] = bvh::v2::dot(node, node);
+    }
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
+    std::cout << "\n\ndot time:  " << duration / 1000.0 << " ms\n";
+
 }
