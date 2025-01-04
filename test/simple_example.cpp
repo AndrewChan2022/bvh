@@ -8,6 +8,8 @@
 #include <bvh/v2/stack.h>
 #include <bvh/v2/tri.h>
 
+#include "load_obj.h"
+
 #include <iostream>
 
 using Scalar  = float;
@@ -33,6 +35,8 @@ int main() {
         Vec3(-1.0, -1.0, 1.0),
         Vec3(-1.0,  1.0, 1.0)
     );
+
+    tris = load_obj<Scalar>("D:/data/dataset/obj/torus_knot_sparse_1k.obj");
 
     bvh::v2::ThreadPool thread_pool;
     bvh::v2::ParallelExecutor executor(thread_pool);
