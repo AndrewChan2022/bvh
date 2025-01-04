@@ -2,10 +2,19 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU
     add_compile_options(-Wall -Wextra -pedantic -march=native)
 endif()
 
+find_package(OpenMP REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /openmp")
+
 add_executable(simple_example simple_example.cpp)
 target_link_libraries(simple_example PUBLIC bvh)
 set_target_properties(simple_example PROPERTIES CXX_STANDARD 20)
 add_test(NAME simple_example COMMAND simple_example)
+
+add_executable(simple_knn simple_knn.cpp)
+target_link_libraries(simple_knn PUBLIC bvh)
+set_target_properties(simple_knn PROPERTIES CXX_STANDARD 20)
+add_test(NAME simple_knn COMMAND simple_knn)
+
 
 add_executable(serialize serialize.cpp)
 target_link_libraries(serialize PUBLIC bvh)
