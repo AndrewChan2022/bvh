@@ -10,10 +10,16 @@ target_link_libraries(simple_example PUBLIC bvh)
 set_target_properties(simple_example PROPERTIES CXX_STANDARD 20)
 add_test(NAME simple_example COMMAND simple_example)
 
-add_executable(simple_knn simple_knn.cpp load_obj.cpp)
+add_executable(simple_knn simple_knn.cpp)
 target_link_libraries(simple_knn PUBLIC bvh)
 set_target_properties(simple_knn PROPERTIES CXX_STANDARD 20)
 add_test(NAME simple_knn COMMAND simple_knn)
+
+add_executable(benchmark_knn benchmark_knn.cpp)
+target_link_libraries(benchmark_knn PUBLIC bvh)
+set_target_properties(benchmark_knn PROPERTIES CXX_STANDARD 20)
+add_test(NAME benchmark_knn COMMAND benchmark_knn)
+
 
 
 add_executable(serialize serialize.cpp)
