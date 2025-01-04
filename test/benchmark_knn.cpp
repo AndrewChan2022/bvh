@@ -286,14 +286,12 @@ struct Accel {
 
 int main() {
 
+    // load mesh
     RenderMesh mesh;
     std::vector<Tri> tris = mesh.loadBin("D:/data/dataset/obj/torus_knot_sparse_1k.bin").getTris();
 
-    Accel accel;
-    bvh::v2::ThreadPool& thread_pool = accel.thread_pool;
-    bvh::v2::ParallelExecutor& executor = accel.executor;
-
     // build accel
+    Accel accel;
     accel.build_accel(tris);
 
     // sphere test
@@ -306,7 +304,7 @@ int main() {
     };
     auto prim_id = accel.sphere_intersect(ray);
     
-    // print
+    // print result
     static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
     if (prim_id != invalid_id) {
         size_t j = prim_id;
@@ -318,10 +316,9 @@ int main() {
             << "  should be : " << tris[0].p0[0] << " " << tris[0].p0[1] << " " << tris[0].p0[2] << "\n"
             << "  distance: " << ray.tmax << "\n";
             //<< "  barycentric coords.: " << u << ", " << v << std::endl;
-            
-        // return 0;
     } else {
         std::cout << "No intersection found" << std::endl;
-        // return 1;
     }
+
+    return 0;
 }
