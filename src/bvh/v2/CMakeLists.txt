@@ -10,7 +10,7 @@ target_include_directories(bvh INTERFACE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:include>)
 
-set_target_properties(bvh PROPERTIES CXX_STANDARD 20)
+set_target_properties(bvh PROPERTIES CXX_STANDARD 17)
 
 if (BVH_BUILD_C_API)
     add_subdirectory(c_api)
