@@ -436,6 +436,7 @@ int main() {
         for (size_t i = 0; i < nnode; i++){
             Vec3 point = Vec3(mesh.vertices[i * 3 + 0], mesh.vertices[i * 3 + 1], mesh.vertices[i * 3 + 2]);
             Vec3 normal = Vec3(mesh.normals[i * 3 + 0], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]);
+            normal = bvh::v2::normalize(normal);
             origins[i] = point;
             directions[i] = normal;
             targets[i] = point + offset * normal;
@@ -484,6 +485,7 @@ int main() {
         for (size_t i = 0; i < nnode; i++){
             Vec3 point = Vec3(mesh.vertices[i * 3 + 0], mesh.vertices[i * 3 + 1], mesh.vertices[i * 3 + 2]);
             Vec3 normal = Vec3(mesh.normals[i * 3 + 0], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]);
+            normal = bvh::v2::normalize(normal);
             origins[i] = point;
             directions[i] = normal;
             targets[i] = point + offset * normal;
@@ -521,6 +523,7 @@ int main() {
         for (size_t i = 0; i < nnode; i++){
             Vec3 point = Vec3(mesh.vertices[i * 3 + 0], mesh.vertices[i * 3 + 1], mesh.vertices[i * 3 + 2]);
             Vec3 normal = Vec3(mesh.normals[i * 3 + 0], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]);
+            normal = bvh::v2::normalize(normal);
             origins[i] = point;
             directions[i] = normal;
             targets[i] = point + offset * normal;
