@@ -17,7 +17,7 @@ add_test(NAME simple_knn COMMAND simple_knn)
 
 add_executable(benchmark_knn benchmark_knn.cpp)
 target_link_libraries(benchmark_knn PUBLIC bvh)
-set_target_properties(benchmark_knn PROPERTIES CXX_STANDARD 20)
+set_target_properties(benchmark_knn PROPERTIES CXX_STANDARD 17)
 add_test(NAME benchmark_knn COMMAND benchmark_knn)
 
 

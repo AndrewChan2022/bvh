@@ -13,6 +13,8 @@
 #include <iostream>
 #include <fstream>
 
+namespace next_gsp {
+
 using Scalar  = float;
 using Vec3    = bvh::v2::Vec<Scalar, 3>;
 using BBox    = bvh::v2::BBox<Scalar, 3>;
@@ -31,7 +33,7 @@ static BVH_ALWAYS_INLINE Scalar FastDot(const Vec3& a, const Vec3& b) {
 }
 
 // Utility function to compute the closest point on a triangle
-static inline Vec3 closest_point_on_triangle(const Vec3& p, const Vec3& a, const Vec3& b, const Vec3& c, Scalar& u, Scalar& v) {
+static inline Vec3 ClosestPointOnTriangle(const Vec3& p, const Vec3& a, const Vec3& b, const Vec3& c, Scalar& u, Scalar& v) {
     // Vectors from triangle vertices to the point
     Vec3 ab = b - a;
     Vec3 ac = c - a;
@@ -83,7 +85,7 @@ static inline Vec3 closest_point_on_triangle(const Vec3& p, const Vec3& a, const
 
 // return optional uv
 // todo: modify ray.tmin/tmax
-static inline std::optional<std::pair<Scalar, Scalar>> sphere_triangle_intersect(const Ray& ray, const bvh::v2::PrecomputedTri<Scalar>& precomputed_tri) {
+static inline std::optional<std::pair<Scalar, Scalar>> SphereTriangleIntersect(const Ray& ray, const bvh::v2::PrecomputedTri<Scalar>& precomputed_tri) {
     const Vec3& center = ray.org;
     Scalar radius = ray.tmax;
 
@@ -94,7 +96,7 @@ static inline std::optional<std::pair<Scalar, Scalar>> sphere_triangle_intersect
 
     // Find the closest point on the triangle to the sphere center
     Scalar u, v;
-    Vec3 closest_point = closest_point_on_triangle(center, p0, p1, p2, u, v);
+    Vec3 closest_point = ClosestPointOnTriangle(center, p0, p1, p2, u, v);
 
     // Compute the distance between the sphere center and the closest point
     Vec3 diff = closest_point - center;
@@ -108,7 +110,7 @@ static inline std::optional<std::pair<Scalar, Scalar>> sphere_triangle_intersect
     return std::nullopt;
 }
 
-static inline Scalar squared_distance_point_to_bbox(const Vec3& point, const std::array<Scalar, 6>& bounds) {
+static inline Scalar SquaredDistancePointToBbox(const Vec3& point, const std::array<Scalar, 6>& bounds) {
     Scalar dist_squared = 0;
 
     // For each dimension (x, y, z)
@@ -131,11 +133,11 @@ static inline Scalar squared_distance_point_to_bbox(const Vec3& point, const std
 
 // return t0, t1
 // todo: modify ray.tmin/tmax
-static inline std::pair<Scalar, Scalar> sphere_node_intersect(const Ray& ray, const Node& node) {
+static inline std::pair<Scalar, Scalar> SphereNodeIntersect(const Ray& ray, const Node& node) {
     const Vec3& center = ray.org;
     Scalar radius = ray.tmax;
 
-    Scalar dist_squared = squared_distance_point_to_bbox(center, node.bounds);
+    Scalar dist_squared = SquaredDistancePointToBbox(center, node.bounds);
 
     // Check if the distance is less than or equal to the sphere radius squared
     // return dist_squared <= radius * radius;
@@ -154,21 +156,21 @@ struct Accel {
     std::vector<PrecomputedTri> tris;
 
     // parallel
-    bvh::v2::ThreadPool thread_pool;
+    bvh::v2::ThreadPool threadPool;
     bvh::v2::ParallelExecutor executor;
 
     // config
-    static constexpr bool should_permute = true;
+    static constexpr bool shouldPermute = true;
     static constexpr bool useRobustTraversal = true;
-    static constexpr size_t stack_size = 64 * 8;        // 512 * sizeof(Bvh::Index) = 2k bytes
-    bvh::v2::SmallStack<Bvh::Index, stack_size> shared_stack;
+    static constexpr size_t stackSize = 64 * 8;        // 512 * sizeof(Bvh::Index) = 2k bytes
+    bvh::v2::SmallStack<Bvh::Index, stackSize> sharedStack;
 
     // constructor, init order by declare order, init list overwrite declare
-    Accel(): thread_pool(0), executor(thread_pool) {
+    Accel(): threadPool(0), executor(threadPool) {
     }
 
     // build
-    void build_accel(const std::vector<Tri>& tris) {
+    void buildAccel(const std::vector<Tri>& tris) {
         
         // build box and centers
         std::vector<BBox> bboxes(tris.size());
@@ -185,12 +187,12 @@ struct Accel {
 
         typename bvh::v2::DefaultBuilder<Node>::Config config;
         config.quality = bvh::v2::DefaultBuilder<Node>::Quality::High;
-        accel.bvh = bvh::v2::DefaultBuilder<Node>::build(thread_pool, bboxes, centers, config);
+        accel.bvh = bvh::v2::DefaultBuilder<Node>::build(threadPool, bboxes, centers, config);
 
         // Permuting the primitive data allows to remove indirections during traversal, which makes it faster.
         // This precomputes some data to speed up traversal further.
         accel.tris.resize(tris.size());
-        if constexpr (should_permute) {
+        if constexpr (shouldPermute) {
             executor.for_each(0, tris.size(), [&] (size_t begin, size_t end) {
                 for (size_t i = begin; i < end; ++i)
                     accel.tris[i] = tris[accel.bvh.prim_ids[i]];
@@ -206,7 +208,7 @@ struct Accel {
     /// @brief first of ray bvh intersect
     /// @param ray ray origin and ray direction, direction maybe not normalized
     /// @return prim_id after permuted
-    size_t ray_intersect(Ray& ray, bvh::v2::SmallStack<Bvh::Index, stack_size>& stack) {
+    size_t RayIntersect(Ray& ray, bvh::v2::SmallStack<Bvh::Index, stackSize>& stack) {
         constexpr bool isAnyHit = true;
 
         static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
@@ -215,7 +217,7 @@ struct Accel {
         bvh.intersect<isAnyHit, useRobustTraversal>(ray, bvh.get_root().index, stack,
             [&] (size_t begin, size_t end) -> bool {
                 for (size_t i = begin; i < end; ++i) {
-                    size_t j = should_permute ? i : bvh.prim_ids[i];
+                    size_t j = shouldPermute ? i : bvh.prim_ids[i];
                     if (auto hit = tris[j].intersect(ray)) {
                         prim_id = i;
                         return true;
@@ -227,13 +229,13 @@ struct Accel {
         return prim_id;
     }
 
-    /// @brief batch call ray_intersect with many rays  
+    /// @brief batch call RayIntersect with many rays  
     /// @param origins ray origins
     /// @param targets ray target
     /// @param tmin tmin, so real min distance is (target - origin) * tmin
     /// @param tmax tmax, so real max distance is (target - origin) * tmax
     /// @param result intersect result, 1 of intersect else 0
-    void batch_ray_intersect(const std::vector<Vec3>& origins, const std::vector<Vec3>& diretions, Scalar tmin, Scalar tmax, std::vector<uint8_t>& result) {
+    void BatchRayIntersect(const std::vector<Vec3>& origins, const std::vector<Vec3>& diretions, Scalar tmin, Scalar tmax, std::vector<uint8_t>& result) {
 
         assert(origins.size() == diretions.size());
 
@@ -243,7 +245,7 @@ struct Accel {
 
         // parallel for
         executor.for_each(0, origins.size(), [&] (size_t begin, size_t end) {
-            bvh::v2::SmallStack<Bvh::Index, stack_size> stack;
+            bvh::v2::SmallStack<Bvh::Index, stackSize> stack;
             for (size_t i = begin; i < end; ++i) {
                 auto ray = Ray {
                     origins[i],         // Ray origin
@@ -252,7 +254,7 @@ struct Accel {
                     tmax                // Maximum intersection distance
                 };
                 stack.size = 0;
-                auto prim_id = ray_intersect(ray, stack);
+                auto prim_id = RayIntersect(ray, stack);
                 static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
                 result[i] = prim_id != invalid_id ? 1 : 0;
             }
@@ -262,7 +264,7 @@ struct Accel {
     /// @brief first of sphere bvh intersect
     /// @param ray define sphere with ray.origin as center and ray.tmax as radius
     /// @return prim_id after permuted
-    size_t sphere_intersect(Ray& ray, bvh::v2::SmallStack<Bvh::Index, stack_size>& stack) {
+    size_t SphereIntersect(Ray& ray, bvh::v2::SmallStack<Bvh::Index, stackSize>& stack) {
         constexpr bool isAnyHit = true;
 
         static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
@@ -271,8 +273,8 @@ struct Accel {
         bvh.traverse_top_down<isAnyHit>(bvh.get_root().index, stack, 
             [&] (size_t begin, size_t end) {    // leaf
                 for (size_t i = begin; i < end; ++i) {
-                    size_t j = should_permute ? i : bvh.prim_ids[i];
-                    if(auto hit = TraverseUtils::sphere_triangle_intersect(ray, tris[j])) {
+                    size_t j = shouldPermute ? i : bvh.prim_ids[i];
+                    if(auto hit = TraverseUtils::SphereTriangleIntersect(ray, tris[j])) {
                         prim_id = i;
                         return true;
                     }
@@ -282,8 +284,8 @@ struct Accel {
             [&] (const Node& left, const Node& right) {     // inner
                 
                 std::pair<Scalar, Scalar> intr_left, intr_right;
-                intr_left = TraverseUtils::sphere_node_intersect(ray, left);
-                intr_right = TraverseUtils::sphere_node_intersect(ray, right);
+                intr_left = TraverseUtils::SphereNodeIntersect(ray, left);
+                intr_right = TraverseUtils::SphereNodeIntersect(ray, right);
 
                 // left hit, right hit, swap left right
                 return std::make_tuple(
@@ -295,11 +297,11 @@ struct Accel {
         return prim_id;
     }
 
-    /// @brief batch call sphere_intersect with many spheres
+    /// @brief batch call SphereIntersect with many spheres
     /// @param centers sphere centers of many sphere
     /// @param radius sphere radius, all sphere has same radius
     /// @param result intersect result, 1 of intersect else 0
-    void batch_sphere_intersect(const std::vector<Vec3>& centers, Scalar radius, std::vector<uint8_t>& result) {
+    void BatchSphereIntersect(const std::vector<Vec3>& centers, Scalar radius, std::vector<uint8_t>& result) {
 
         if (result.size() != centers.size()) {
             result.resize(centers.size());
@@ -307,7 +309,7 @@ struct Accel {
 
         // parallel for
         executor.for_each(0, centers.size(), [&] (size_t begin, size_t end) {
-            bvh::v2::SmallStack<Bvh::Index, stack_size> stack;
+            bvh::v2::SmallStack<Bvh::Index, stackSize> stack;
             for (size_t i = begin; i < end; ++i) {
                 auto ray = Ray {
                     centers[i],         // Ray origin
@@ -316,7 +318,7 @@ struct Accel {
                     radius              // Maximum intersection distance
                 };
                 stack.size = 0;
-                auto prim_id = sphere_intersect(ray, stack);
+                auto prim_id = SphereIntersect(ray, stack);
                 static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
                 result[i] = prim_id != invalid_id ? 1 : 0;
             }
@@ -324,7 +326,11 @@ struct Accel {
     }
 };
 
+}  // namespace next_gsp
+
 int main() {
+
+    using namespace next_gsp;
 
     // load mesh
     RenderMesh mesh;
@@ -332,7 +338,7 @@ int main() {
 
     // build accel
     Accel accel;
-    accel.build_accel(tris);
+    accel.buildAccel(tris);
 
     // sphere test, 1.0 always not found, 1.00001 always found
     auto O = tris[0].p0 + 0.299999f * mesh.getNormal(0, 0);  // offset along normal
@@ -342,7 +348,7 @@ int main() {
         0.,               // Minimum intersection distance
         0.3               // Maximum intersection distance
     };
-    auto prim_id = accel.sphere_intersect(ray, accel.shared_stack);
+    auto prim_id = accel.SphereIntersect(ray, accel.sharedStack);
     
     // print result
     static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
@@ -371,7 +377,7 @@ int main() {
             0.,               // Minimum intersection distance
             0.999f            // Maximum intersection distance
         };
-        prim_id = accel.ray_intersect(ray, accel.shared_stack);
+        prim_id = accel.RayIntersect(ray, accel.sharedStack);
         
         // print result
         if (prim_id != invalid_id) {
@@ -399,7 +405,7 @@ int main() {
             0.,               // Minimum intersection distance
             1.001f            // Maximum intersection distance
         };
-        prim_id = accel.ray_intersect(ray, accel.shared_stack);
+        prim_id = accel.RayIntersect(ray, accel.sharedStack);
         
         // print result
         if (prim_id != invalid_id) {
@@ -436,7 +442,7 @@ int main() {
         }
         std::vector<uint8_t> ret(nnode);
         auto start = std::chrono::high_resolution_clock::now();
-        accel.batch_ray_intersect(origins, directions, 0.01, 100.0, ret);
+        accel.BatchRayIntersect(origins, directions, 0.01, 100.0, ret);
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
         std::cout << "\n\nray hit time:  " << duration / 1000.0 << " ms\n";
 
@@ -484,7 +490,7 @@ int main() {
         }
         std::vector<uint8_t> ret(nnode);
         auto start = std::chrono::high_resolution_clock::now();
-        accel.batch_sphere_intersect(targets, threshold, ret);
+        accel.BatchSphereIntersect(targets, threshold, ret);
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
         std::cout << "\n\nknn time:  " << duration / 1000.0 << " ms\n";
 
@@ -521,7 +527,7 @@ int main() {
         }
         std::vector<uint8_t> ret(nnode);
         auto start = std::chrono::high_resolution_clock::now();
-        accel.batch_sphere_intersect(targets, threshold, ret);
+        accel.BatchSphereIntersect(targets, threshold, ret);
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
         std::cout << "\n\nknn time:  " << duration / 1000.0 << " ms\n";
 
