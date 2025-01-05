@@ -231,7 +231,7 @@ struct Accel {
 
     /// @brief batch call RayIntersect with many rays  
     /// @param origins ray origins
-    /// @param targets ray target
+    /// @param diretions ray diretions
     /// @param tmin tmin, so real min distance is (target - origin) * tmin
     /// @param tmax tmax, so real max distance is (target - origin) * tmax
     /// @param result intersect result, 1 of intersect else 0
