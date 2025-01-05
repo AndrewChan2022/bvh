@@ -163,7 +163,7 @@ struct Accel {
     static constexpr size_t stack_size = 64 * 8;        // 512 * sizeof(Bvh::Index) = 2k bytes
     bvh::v2::SmallStack<Bvh::Index, stack_size> shared_stack;
 
-    // constructor
+    // constructor, init order by declare order, init list overwrite declare
     Accel(): thread_pool(0), executor(thread_pool) {
     }
 
@@ -325,8 +325,6 @@ struct Accel {
 };
 
 int main() {
-
-    printf("sizeof(Bvh::Index):%llu\n", sizeof(Bvh::Index));
 
     // load mesh
     RenderMesh mesh;
