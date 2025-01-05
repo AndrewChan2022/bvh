@@ -5,6 +5,8 @@
 #include <fstream>
 #include <bvh/v2/vec.h>
 #include <bvh/v2/tri.h>
+#include <iostream>
+#include <filesystem>
 
 using Scalar  = float;
 using Vec3    = bvh::v2::Vec<Scalar, 3>;
@@ -74,5 +76,39 @@ struct RenderMesh {
     Vec3 getNormal(uint32_t triangle, uint32_t point) {
         uint32_t index = indices[triangle * 3 + point];
         return Vec3(normals[index * 3 + 0], normals[index * 3 + 1], normals[index * 3 + 2]);
+    }
+
+    static void saveToLine(const std::string& filename, std::vector<float>& lines) {
+
+        const std::vector<float>& vertices = lines;
+
+        std::ofstream outFile(filename);
+
+        if (!outFile.is_open()) {
+            std::cerr << "Failed to open file: " << filename << std::endl;
+            return;
+        }
+
+        // Write vertices
+        for (size_t i = 0; i < vertices.size(); i += 3) {
+            outFile << "v " 
+                    << vertices[i] << " " 
+                    << vertices[i + 1] << " " 
+                    << vertices[i + 2] << "\n";
+        }
+
+        
+        // Write faces (indices)
+        for (size_t i = 0; i < vertices.size() / 3 / 2; i ++) {
+            // OBJ uses 1-based indexing
+            outFile << "l " 
+                    << i * 2 + 0 + 1 << " "
+                    << i * 2 + 1 + 1 << "\n";
+        }
+
+        outFile.close();
+
+        std::filesystem::path file_path(filename);
+        std::cout << "Successfully saved to " << std::filesystem::absolute(file_path).string() << std::endl;
     }
 };

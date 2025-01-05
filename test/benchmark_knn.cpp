@@ -152,17 +152,22 @@ static inline std::pair<Scalar, Scalar> sphere_node_intersect(const Ray& ray, co
 struct Accel {
     Bvh bvh;
     std::vector<PrecomputedTri> tris;
+
+    // parallel
     bvh::v2::ThreadPool thread_pool;
     bvh::v2::ParallelExecutor executor;
 
     // config
     static constexpr bool should_permute = true;
-    static constexpr size_t stack_size = 64;
-    bvh::v2::SmallStack<Bvh::Index, stack_size> stack;
+    static constexpr bool useRobustTraversal = true;
+    static constexpr size_t stack_size = 64 * 8;        // 512 * sizeof(Bvh::Index) = 2k bytes
+    bvh::v2::SmallStack<Bvh::Index, stack_size> shared_stack;
 
-    Accel(): executor(thread_pool) {
+    // constructor
+    Accel(): thread_pool(0), executor(thread_pool) {
     }
 
+    // build
     void build_accel(const std::vector<Tri>& tris) {
         
         // build box and centers
@@ -198,14 +203,39 @@ struct Accel {
         }
     }
 
-    bool ray_intersect(Ray& ray) {
+    /// @brief first of ray bvh intersect
+    /// @param ray ray origin and ray direction, direction maybe not normalized
+    /// @return prim_id after permuted
+    size_t ray_intersect(Ray& ray, bvh::v2::SmallStack<Bvh::Index, stack_size>& stack) {
         constexpr bool isAnyHit = true;
+
+        static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
+        auto prim_id = invalid_id;
+
+        bvh.intersect<isAnyHit, useRobustTraversal>(ray, bvh.get_root().index, stack,
+            [&] (size_t begin, size_t end) -> bool {
+                for (size_t i = begin; i < end; ++i) {
+                    size_t j = should_permute ? i : bvh.prim_ids[i];
+                    if (auto hit = tris[j].intersect(ray)) {
+                        prim_id = i;
+                        return true;
+                    }
+                }
+                return prim_id != invalid_id;
+            });
+        
+        return prim_id;
     }
 
-    // result is intersect result, true for intersect
-    void batch_ray_intersect(std::vector<Vec3>& origins, std::vector<Vec3>& targets, std::vector<uint8_t>& result) {
+    /// @brief batch call ray_intersect with many rays  
+    /// @param origins ray origins
+    /// @param targets ray target
+    /// @param tmin tmin, so real min distance is (target - origin) * tmin
+    /// @param tmax tmax, so real max distance is (target - origin) * tmax
+    /// @param result intersect result, 1 of intersect else 0
+    void batch_ray_intersect(const std::vector<Vec3>& origins, const std::vector<Vec3>& diretions, Scalar tmin, Scalar tmax, std::vector<uint8_t>& result) {
 
-        assert(origins.size() == targets.size());
+        assert(origins.size() == diretions.size());
 
         if (result.size() != origins.size()) {
             result.resize(origins.size());
@@ -213,21 +243,26 @@ struct Accel {
 
         // parallel for
         executor.for_each(0, origins.size(), [&] (size_t begin, size_t end) {
+            bvh::v2::SmallStack<Bvh::Index, stack_size> stack;
             for (size_t i = begin; i < end; ++i) {
-                auto dir = targets[i] - origins[i];
                 auto ray = Ray {
                     origins[i],         // Ray origin
-                    dir,                // Ray direction
-                    0.,                 // Minimum intersection distance
-                    1.                  // Maximum intersection distance
+                    diretions[i],       // Ray direction
+                    tmin,               // Minimum intersection distance
+                    tmax                // Maximum intersection distance
                 };
-                auto ret = ray_intersect(ray);
-                result[i] = ret ? 1 : 0;
+                stack.size = 0;
+                auto prim_id = ray_intersect(ray, stack);
+                static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
+                result[i] = prim_id != invalid_id ? 1 : 0;
             }
         });
     }
 
-    size_t sphere_intersect(Ray& ray) {
+    /// @brief first of sphere bvh intersect
+    /// @param ray define sphere with ray.origin as center and ray.tmax as radius
+    /// @return prim_id after permuted
+    size_t sphere_intersect(Ray& ray, bvh::v2::SmallStack<Bvh::Index, stack_size>& stack) {
         constexpr bool isAnyHit = true;
 
         static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
@@ -260,8 +295,11 @@ struct Accel {
         return prim_id;
     }
 
-    // result is intersect result, true for intersect
-    void batch_sphere_intersect(std::vector<Vec3>& centers, Scalar radius, std::vector<uint8_t>& result) {
+    /// @brief batch call sphere_intersect with many spheres
+    /// @param centers sphere centers of many sphere
+    /// @param radius sphere radius, all sphere has same radius
+    /// @param result intersect result, 1 of intersect else 0
+    void batch_sphere_intersect(const std::vector<Vec3>& centers, Scalar radius, std::vector<uint8_t>& result) {
 
         if (result.size() != centers.size()) {
             result.resize(centers.size());
@@ -269,6 +307,7 @@ struct Accel {
 
         // parallel for
         executor.for_each(0, centers.size(), [&] (size_t begin, size_t end) {
+            bvh::v2::SmallStack<Bvh::Index, stack_size> stack;
             for (size_t i = begin; i < end; ++i) {
                 auto ray = Ray {
                     centers[i],         // Ray origin
@@ -276,7 +315,8 @@ struct Accel {
                     0.,                 // Minimum intersection distance
                     radius              // Maximum intersection distance
                 };
-                auto prim_id = sphere_intersect(ray);
+                stack.size = 0;
+                auto prim_id = sphere_intersect(ray, stack);
                 static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
                 result[i] = prim_id != invalid_id ? 1 : 0;
             }
@@ -286,15 +326,17 @@ struct Accel {
 
 int main() {
 
+    printf("sizeof(Bvh::Index):%llu\n", sizeof(Bvh::Index));
+
     // load mesh
     RenderMesh mesh;
-    std::vector<Tri> tris = mesh.loadBin("D:/data/dataset/obj/torus_knot_sparse_1k.bin").getTris();
+    std::vector<Tri> tris = mesh.loadBin("D:/data/dataset/obj/torus_knot_sparse_1m.bin").getTris();
 
     // build accel
     Accel accel;
     accel.build_accel(tris);
 
-    // sphere test
+    // sphere test, 1.0 always not found, 1.00001 always found
     auto O = tris[0].p0 + 0.299999f * mesh.getNormal(0, 0);  // offset along normal
     auto ray = Ray {
         O,                // Ray origin
@@ -302,7 +344,7 @@ int main() {
         0.,               // Minimum intersection distance
         0.3               // Maximum intersection distance
     };
-    auto prim_id = accel.sphere_intersect(ray);
+    auto prim_id = accel.sphere_intersect(ray, accel.shared_stack);
     
     // print result
     static constexpr size_t invalid_id = std::numeric_limits<size_t>::max();
@@ -318,6 +360,148 @@ int main() {
             //<< "  barycentric coords.: " << u << ", " << v << std::endl;
     } else {
         std::cout << "No intersection found" << std::endl;
+    }
+
+
+    {
+        // ray test,  1.0 always found, 0.999 not found
+        O = tris[0].p0 - 0.299999f * mesh.getNormal(0, 0);  // offset along normal
+        auto Target = tris[0].p0 + 0.0f * mesh.getNormal(0, 0);
+        ray = Ray {
+            O,                // Ray origin
+            Target - O,       // Ray direction
+            0.,               // Minimum intersection distance
+            0.999f            // Maximum intersection distance
+        };
+        prim_id = accel.ray_intersect(ray, accel.shared_stack);
+        
+        // print result
+        if (prim_id != invalid_id) {
+            size_t j = prim_id;
+            auto tri = accel.tris[j].convert_to_tri();
+            std::cout
+                << "Intersection found\n"
+                << "  primitive: " << prim_id << "\n"
+                << "  vertices  : " << tri.p0[0] << " " << tri.p0[1] << " " << tri.p0[2] << "\n"
+                << "  should be : " << tris[0].p0[0] << " " << tris[0].p0[1] << " " << tris[0].p0[2] << "\n"
+                << "  distance: " << ray.tmax << "\n";
+                //<< "  barycentric coords.: " << u << ", " << v << std::endl;
+        } else {
+            std::cout << "No intersection found" << std::endl;
+        }
+    }
+
+    {
+        // ray test,  1.0 always found, 0.999 not found
+        O = tris[0].p0 - 0.299999f * mesh.getNormal(0, 0);  // offset along normal
+        auto Target = tris[0].p0 + 0.0f * mesh.getNormal(0, 0);
+        ray = Ray {
+            O,                // Ray origin
+            Target - O,       // Ray direction
+            0.,               // Minimum intersection distance
+            1.001f            // Maximum intersection distance
+        };
+        prim_id = accel.ray_intersect(ray, accel.shared_stack);
+        
+        // print result
+        if (prim_id != invalid_id) {
+            size_t j = prim_id;
+            auto tri = accel.tris[j].convert_to_tri();
+            std::cout
+                << "Intersection found\n"
+                << "  primitive: " << prim_id << "\n"
+                << "  vertices  : " << tri.p0[0] << " " << tri.p0[1] << " " << tri.p0[2] << "\n"
+                << "  should be : " << tris[0].p0[0] << " " << tris[0].p0[1] << " " << tris[0].p0[2] << "\n"
+                << "  distance: " << ray.tmax << "\n";
+                //<< "  barycentric coords.: " << u << ", " << v << std::endl;
+        } else {
+            std::cout << "No intersection found" << std::endl;
+        }
+    }
+
+
+
+    // batch ray test
+    {   
+        constexpr float offset = 100.0;
+
+        size_t nnode = mesh.vertices.size() / 3;
+        std::vector<Vec3> origins(nnode);
+        std::vector<Vec3> directions(nnode);
+        std::vector<Vec3> targets(nnode);
+        for (size_t i = 0; i < nnode; i++){
+            Vec3 point = Vec3(mesh.vertices[i * 3 + 0], mesh.vertices[i * 3 + 1], mesh.vertices[i * 3 + 2]);
+            Vec3 normal = Vec3(mesh.normals[i * 3 + 0], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]);
+            origins[i] = point;
+            directions[i] = normal;
+            targets[i] = point + offset * normal;
+        }
+        std::vector<uint8_t> ret(nnode);
+        auto start = std::chrono::high_resolution_clock::now();
+        accel.batch_ray_intersect(origins, directions, 0.01, 100.0, ret);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
+        std::cout << "\n\nray hit time:  " << duration / 1000.0 << " ms\n";
+
+
+        std::vector<float> lines_nohit;
+        std::vector<float> lines_hit;
+        for (size_t i = 0; i < std::min((size_t)1000, ret.size()); i++) {
+            if (ret[i] < 0.5) {
+                lines_nohit.push_back( origins[i][0] );
+                lines_nohit.push_back( origins[i][1] );
+                lines_nohit.push_back( origins[i][2] );
+
+                lines_nohit.push_back( targets[i][0] );
+                lines_nohit.push_back( targets[i][1] );
+                lines_nohit.push_back( targets[i][2] );
+            } else {
+                lines_hit.push_back( origins[i][0] );
+                lines_hit.push_back( origins[i][1] );
+                lines_hit.push_back( origins[i][2] );
+
+                lines_hit.push_back( targets[i][0] );
+                lines_hit.push_back( targets[i][1] );
+                lines_hit.push_back( targets[i][2] );
+            }
+        }
+        RenderMesh::saveToLine("./line_nohit2.obj", lines_nohit);
+        RenderMesh::saveToLine("./line_hit2.obj", lines_hit);
+    }
+
+    // batch knn test
+    {   
+        constexpr float offset = 0.1;
+        constexpr float threshold = 0.101;
+
+        size_t nnode = mesh.vertices.size() / 3;
+        std::vector<Vec3> origins(nnode);
+        std::vector<Vec3> directions(nnode);
+        std::vector<Vec3> targets(nnode);
+        for (size_t i = 0; i < nnode; i++){
+            Vec3 point = Vec3(mesh.vertices[i * 3 + 0], mesh.vertices[i * 3 + 1], mesh.vertices[i * 3 + 2]);
+            Vec3 normal = Vec3(mesh.normals[i * 3 + 0], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]);
+            origins[i] = point;
+            directions[i] = normal;
+            targets[i] = point + offset * normal;
+        }
+        std::vector<uint8_t> ret(nnode);
+        auto start = std::chrono::high_resolution_clock::now();
+        accel.batch_sphere_intersect(targets, threshold, ret);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
+        std::cout << "\n\nknn time:  " << duration / 1000.0 << " ms\n";
+
+
+        size_t hit_count = 0;
+        size_t nohit_count = 0;
+        for (size_t i = 0; i < ret.size(); i++) {
+            if (ret[i] < 0.5) {
+                nohit_count++;
+            } else {
+                hit_count++;
+            }
+        }
+        std::cout << "no knn count: " << nohit_count << "\n";
+        std::cout << "has knn count: " << hit_count << "\n";
     }
 
     return 0;

@@ -32,7 +32,7 @@ template struct bvh::v2::Sphere<Scalar, 3>;
 
 using PrecomputedTri = bvh::v2::PrecomputedTri<Scalar>;
 
-static constexpr size_t stack_size = 64;
+static constexpr size_t stack_size = 64; // 64 * 8;
 
 static void usage() {
     std::cout <<
