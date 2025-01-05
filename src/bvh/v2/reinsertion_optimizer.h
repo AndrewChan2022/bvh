@@ -135,8 +135,12 @@ private:
          *     ... +
          *     -SA(A U C)                                              : For the parent of A and C
          */
-
+#if __cplusplus >= 202002L
         Reinsertion best_reinsertion { .from = node_id };
+#else
+        Reinsertion best_reinsertion;
+        best_reinsertion.from = node_id;
+#endif
         auto node_area   = bvh_.nodes[node_id].get_bbox().get_half_area();
         auto parent_area = bvh_.nodes[parents_[node_id]].get_bbox().get_half_area();
         auto area_diff = parent_area;

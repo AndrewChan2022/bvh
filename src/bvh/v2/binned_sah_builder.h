@@ -30,8 +30,8 @@ public:
     using typename TopDownSahBuilder<Node>::Config;
 
     BVH_ALWAYS_INLINE static Bvh<Node> build(
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config = {})
     {
         return BinnedSahBuilder(bboxes, centers, config).build();
@@ -68,8 +68,8 @@ protected:
     std::vector<size_t> prim_ids_;
 
     BVH_ALWAYS_INLINE BinnedSahBuilder(
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config)
         : TopDownSahBuilder<Node>(bboxes, centers, config)
         , prim_ids_(bboxes.size())

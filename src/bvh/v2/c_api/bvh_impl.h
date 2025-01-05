@@ -105,12 +105,12 @@ static typename BvhTypes<T, Dim>::Bvh* bvh_build(
     auto bvh = thread_pool
         ? bvh::v2::DefaultBuilder<bvh::v2::Node<T, Dim>>::build(
             *reinterpret_cast<bvh::v2::ThreadPool*>(thread_pool),
-            std::span { translated_bboxes,  translated_bboxes + prim_count },
-            std::span { translated_centers, translated_centers + prim_count },
+            bvh::v2::Span { translated_bboxes,  translated_bboxes + prim_count },
+            bvh::v2::Span { translated_centers, translated_centers + prim_count },
             translate<T, Dim>(config))
         : bvh::v2::DefaultBuilder<bvh::v2::Node<T, Dim>>::build(
-            std::span { translated_bboxes,  translated_bboxes + prim_count },
-            std::span { translated_centers, translated_centers + prim_count },
+            bvh::v2::Span { translated_bboxes,  translated_bboxes + prim_count },
+            bvh::v2::Span { translated_centers, translated_centers + prim_count },
             translate<T, Dim>(config));
     return reinterpret_cast<typename BvhTypes<T, Dim>::Bvh*>(new decltype(bvh) { std::move(bvh) });
 }

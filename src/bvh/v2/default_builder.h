@@ -32,8 +32,8 @@ public:
     /// Build a BVH in parallel using the given thread pool.
     BVH_ALWAYS_INLINE static Bvh<Node> build(
         ThreadPool& thread_pool,
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config = {})
     {
         if (bboxes.size() < config.parallel_threshold)
@@ -47,8 +47,8 @@ public:
 
     /// Build a BVH in a single-thread.
     BVH_ALWAYS_INLINE static Bvh<Node> build(
-        std::span<const BBox>  bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox>  bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config = {})
     {
         if (config.quality == Quality::Low)

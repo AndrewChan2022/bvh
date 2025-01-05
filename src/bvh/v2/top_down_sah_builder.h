@@ -7,7 +7,8 @@
 #include "bvh/v2/split_heuristic.h"
 
 #include <stack>
-#include <span>
+// #include <span>
+#include "bvh/v2/bvhspan.h"
 #include <algorithm>
 #include <optional>
 #include <numeric>
@@ -48,13 +49,13 @@ protected:
         BVH_ALWAYS_INLINE size_t size() const { return end - begin; }
     };
 
-    std::span<const BBox> bboxes_;
-    std::span<const Vec> centers_;
+    bvh::v2::Span<const BBox> bboxes_;
+    bvh::v2::Span<const Vec> centers_;
     const Config& config_;
 
     BVH_ALWAYS_INLINE TopDownSahBuilder(
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config)
         : bboxes_(bboxes)
         , centers_(centers)

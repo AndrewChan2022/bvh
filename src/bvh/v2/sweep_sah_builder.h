@@ -28,8 +28,8 @@ public:
     using typename TopDownSahBuilder<Node>::Config;
 
     BVH_ALWAYS_INLINE static Bvh<Node> build(
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config = {})
     {
         return SweepSahBuilder(bboxes, centers, config).build();
@@ -47,8 +47,8 @@ protected:
     std::vector<size_t> prim_ids_[Node::dimension];
 
     BVH_ALWAYS_INLINE SweepSahBuilder(
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config)
         : TopDownSahBuilder<Node>(bboxes, centers, config)
     {

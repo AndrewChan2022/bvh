@@ -19,4 +19,10 @@
 #define BVH_ALWAYS_INLINE inline
 #endif
 
+#if __cplusplus >= 202002L
+#define BVH_UNLIKELY [[unlikely]]
+#else
+#define BVH_UNLIKELY
+#endif
+
 #endif

@@ -46,8 +46,8 @@ public:
     /// and runs on the given thread pool.
     BVH_ALWAYS_INLINE static Bvh<Node> build(
         ThreadPool& thread_pool,
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config = {})
     {
         MiniTreeBuilder builder(thread_pool, bboxes, centers, config);
@@ -140,14 +140,14 @@ private:
     };
 
     ParallelExecutor executor_;
-    std::span<const BBox> bboxes_;
-    std::span<const Vec> centers_;
+    bvh::v2::Span<const BBox> bboxes_;
+    bvh::v2::Span<const Vec> centers_;
     const Config& config_;
 
     BVH_ALWAYS_INLINE MiniTreeBuilder(
         ThreadPool& thread_pool,
-        std::span<const BBox> bboxes,
-        std::span<const Vec> centers,
+        bvh::v2::Span<const BBox> bboxes,
+        bvh::v2::Span<const Vec> centers,
         const Config& config)
         : executor_(thread_pool)
         , bboxes_(bboxes)

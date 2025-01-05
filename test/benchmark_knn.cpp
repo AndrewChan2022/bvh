@@ -498,6 +498,44 @@ int main() {
                 hit_count++;
             }
         }
+        std::cout << "should all knn\n";
+        std::cout << "no knn count: " << nohit_count << "\n";
+        std::cout << "has knn count: " << hit_count << "\n";
+    }
+
+    // batch knn test
+    {   
+        constexpr float offset = 0.1;
+        constexpr float threshold = 0.0999;
+
+        size_t nnode = mesh.vertices.size() / 3;
+        std::vector<Vec3> origins(nnode);
+        std::vector<Vec3> directions(nnode);
+        std::vector<Vec3> targets(nnode);
+        for (size_t i = 0; i < nnode; i++){
+            Vec3 point = Vec3(mesh.vertices[i * 3 + 0], mesh.vertices[i * 3 + 1], mesh.vertices[i * 3 + 2]);
+            Vec3 normal = Vec3(mesh.normals[i * 3 + 0], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]);
+            origins[i] = point;
+            directions[i] = normal;
+            targets[i] = point + offset * normal;
+        }
+        std::vector<uint8_t> ret(nnode);
+        auto start = std::chrono::high_resolution_clock::now();
+        accel.batch_sphere_intersect(targets, threshold, ret);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
+        std::cout << "\n\nknn time:  " << duration / 1000.0 << " ms\n";
+
+
+        size_t hit_count = 0;
+        size_t nohit_count = 0;
+        for (size_t i = 0; i < ret.size(); i++) {
+            if (ret[i] < 0.5) {
+                nohit_count++;
+            } else {
+                hit_count++;
+            }
+        }
+        std::cout << "should no knn\n";
         std::cout << "no knn count: " << nohit_count << "\n";
         std::cout << "has knn count: " << hit_count << "\n";
     }
