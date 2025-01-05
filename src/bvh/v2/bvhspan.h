@@ -26,7 +26,7 @@ struct Span {
     // Accessor for size_
     size_t length() const { return size_; }
 
-    rsize_t size() const { return size_;  }
+    size_t size() const { return size_;  }
 
     // Accessor for data
     T* begin() { return data; }
